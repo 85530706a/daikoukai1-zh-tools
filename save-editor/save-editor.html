@@ -1,0 +1,324 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>大航海时代 存档修改器</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a ship's-ledger column — header plate, slot tabs, ledger rows, then the raw byte drawer. */
+:root{
+  --sea:#e6ecef; --paper:#f7f9fa; --ink:#14283a; --muted:#5b6b78; --rule:#c9d3da;
+  --brass:#a8741c; --brass-ink:#fff8ec; --tide:#1f5f7a; --warn:#b4402a; --ok:#2f7a4b;
+  --display:"Noto Serif SC","Songti SC",serif; --body:"Noto Sans SC","PingFang SC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --sea:#0d1820; --paper:#13222d; --ink:#e3ebf0; --muted:#93a5b2; --rule:#2a3d4b;
+  --brass:#d9a54a; --brass-ink:#1a1307; --tide:#6fb3cf; --warn:#ef7a62; --ok:#6cc48d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --sea:#0d1820; --paper:#13222d; --ink:#e3ebf0; --muted:#93a5b2; --rule:#2a3d4b;
+  --brass:#d9a54a; --brass-ink:#1a1307; --tide:#6fb3cf; --warn:#ef7a62; --ok:#6cc48d; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--sea);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6}
+.wrap{max-width:860px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:22px}
+header{display:grid;gap:6px}
+.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--tide);font-weight:700}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(28px,6vw,40px);line-height:1.15;margin:0;text-wrap:balance}
+.lede{color:var(--muted);margin:0;max-width:62ch}
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:18px}
+.drop{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border:1.5px dashed var(--rule);border-radius:10px;padding:16px;background:var(--paper)}
+.drop.over{border-color:var(--tide)}
+.drop p{margin:0;min-width:0}
+.status{font-size:13px;color:var(--muted)}
+.status.ok{color:var(--ok)} .status.bad{color:var(--warn)}
+button,.btn{font:inherit;font-weight:500;border-radius:8px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--tide)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--tide);outline-offset:2px}
+button.primary{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tab{display:grid;gap:2px;text-align:left;min-width:120px;flex:1}
+.tab small{color:var(--muted);font-family:var(--mono);font-size:12px}
+.tab[aria-pressed="true"]{border-color:var(--brass);box-shadow:inset 0 0 0 1px var(--brass)}
+h2{font-family:var(--display);font-weight:600;font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+.rows{display:grid;gap:0}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--rule)}
+.row:first-child{border-top:0}
+.row label{display:grid;gap:1px;min-width:0}
+.row label span{font-weight:500}
+.row label code,.hint{font-family:var(--mono);font-size:12px;color:var(--muted)}
+input,select{font:inherit;font-family:var(--mono);font-variant-numeric:tabular-nums;width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--rule);background:var(--sea);color:var(--ink)}
+input.changed,select.changed{border-color:var(--brass);background:color-mix(in srgb,var(--brass) 12%,var(--sea))}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+.tablebox{overflow-x:auto}
+th,td{padding:8px 6px;border-top:1px solid var(--rule);text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:500;border-top:0}
+td input{width:90px}
+.empty{color:var(--muted)}
+.raw{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.raw label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.save{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.save p{margin:0;min-width:0;color:var(--muted);font-size:13px;max-width:56ch}
+.note{font-size:13px;color:var(--muted);margin:0}
+.example{display:inline-block;font-size:12px;font-weight:700;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px;margin-left:6px}
+@media (max-width:560px){.row{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">KOEI · 大航海时代 1 · SAVE.DAT</div>
+    <h1>大航海时代 存档修改器</h1>
+    <p class="lede">载入游戏目录里的 SAVE.DAT，选档位，改金钱、皇宫存款、名望、爵位和船员，再保存回去。文件只在你的浏览器里处理，不会上传。</p>
+  </header>
+
+  <div class="drop" id="drop">
+    <p><b>载入存档</b> <span class="status" id="status">还没有载入文件，下面显示的是新开局的示例数值。</span></p>
+    <label class="btn" for="file">选择 SAVE.DAT<input id="file" type="file" accept=".dat,.DAT" hidden></label>
+  </div>
+
+  <div class="tabs" id="tabs" role="group" aria-label="档位"></div>
+
+  <section class="panel">
+    <h2>提督 <span class="example" id="exampleTag">示例</span></h2>
+    <p class="sub">游戏里最重要的四个数值。改过的格子会标成金色。</p>
+    <div class="rows" id="mainRows"></div>
+    <div class="presets">
+      <button id="presetMax" type="button">一键拉满（金币 65535 · 存款 10000 千 · 名望 30000 · 公爵）</button>
+      <button id="presetRank" type="button">只升到公爵</button>
+      <button id="presetReset" type="button">撤销本档修改</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>舰队</h2>
+    <p class="sub">最多 5 艘船。船名显示为“null”的是空位。船员数不要超过船的容量，否则游戏可能出错。</p>
+    <div class="tablebox"><table>
+      <thead><tr><th>#</th><th>船名</th><th>船员数</th><th>WEP 值</th></tr></thead>
+      <tbody id="ships"></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel">
+    <h2>按地址改任意数值</h2>
+    <p class="sub">地址是游戏数据段地址（十六进制），范围 0050–1DFF。例：金币 0CAD（2 字节），名望 17D2（2 字节），爵位 17D4（1 字节）。</p>
+    <div class="raw">
+      <label>地址（十六进制）<input id="rawAddr" value="0CAD" maxlength="4"></label>
+      <label>长度<select id="rawLen"><option value="1">1 字节</option><option value="2" selected>2 字节</option></select></label>
+      <label>当前值<input id="rawCur" readonly></label>
+      <label>新值（十进制）<input id="rawNew" inputmode="numeric"></label>
+      <button id="rawApply" type="button">写入</button>
+    </div>
+    <p class="note" id="rawMsg" style="margin-top:10px"></p>
+  </section>
+
+  <section class="panel save">
+    <p>在普通浏览器里会直接下载 <b>SAVE.DAT</b>；在 claude.ai 里打开时会生成 <b>SAVE_修改版.zip</b>（那里不能直接存 .DAT 文件），解压即可。覆盖到游戏目录前，先备份原来的 SAVE.DAT。</p>
+    <button class="primary" id="saveBtn" type="button" disabled>保存修改后的存档</button>
+  </section>
+  <p class="note" id="saveMsg"></p>
+</div>
+
+<script>
+(() => {
+  const SIZE = 62596, SLOT_BASE = 0x100, SLOT_LEN = 0x3000, DS0 = 0x50;
+  const RANKS = ["无","侍从","乡绅","爵士","从男爵","男爵","子爵","伯爵","侯爵","公爵"];
+  const FIELDS = [
+    {key:"gold", label:"身上的金币", addr:0x0CAD, len:2, max:65535},
+    {key:"bank", label:"皇宫存款（单位：千金币）", addr:0x17D0, len:2, max:10000},
+    {key:"fame", label:"名望", addr:0x17D2, len:2, max:65535},
+    {key:"rank", label:"爵位", addr:0x17D4, len:1, max:9, select:true},
+  ];
+  const SHIP0 = 0x1336, SHIP_STRIDE = 0x15, SHIPS = 5;
+
+  let buf = null, orig = null, slot = 0, loaded = false;
+
+  // Example state: a fresh-start slot (gold 1000, everything else 0)
+  function exampleBuffer(){
+    const b = new Uint8Array(SIZE);
+    const names = ["KOEI GAME ","KOEI GAME ","KOEI GAME ","KOEI GAME ","KOEI GAME "];
+    names.forEach((n,i)=>{ for(let j=0;j<n.length;j++) b[5+i*11+j]=n.charCodeAt(j); });
+    for(let s=0;s<5;s++){
+      const o = a => SLOT_BASE + s*SLOT_LEN + a - DS0;
+      b[o(0x0CAD)] = 0xE8; b[o(0x0CAD)+1] = 0x03;
+      const name = s===0 ? "Hermes" : "null";
+      for(let k=0;k<SHIPS;k++){
+        const base = o(SHIP0 + k*SHIP_STRIDE);
+        const nm = k===0 ? name : "null";
+        for(let j=0;j<nm.length;j++) b[base+j]=nm.charCodeAt(j);
+        if(k===0){ b[base+15]=20; b[base+17]=10; }
+      }
+    }
+    return b;
+  }
+
+  const off = (s,a) => SLOT_BASE + s*SLOT_LEN + a - DS0;
+  const rd = (b,s,a,len) => len===1 ? b[off(s,a)] : b[off(s,a)] | (b[off(s,a)+1]<<8);
+  function wr(s,a,len,v){ const o=off(s,a); buf[o]=v&255; if(len===2) buf[o+1]=(v>>8)&255; }
+
+  const $ = id => document.getElementById(id);
+
+  function slotName(i){
+    let s=""; for(let j=0;j<10;j++){ const c=buf[5+i*11+j]; if(!c) break; s+=String.fromCharCode(c); }
+    return s.trim() || "（无名）";
+  }
+
+  function renderTabs(){
+    const t=$("tabs"); t.innerHTML="";
+    for(let i=0;i<5;i++){
+      const b=document.createElement("button"); b.type="button"; b.className="tab";
+      b.setAttribute("aria-pressed", String(i===slot));
+      const g=rd(buf,i,0x0CAD,2), r=rd(buf,i,0x17D4,1);
+      const strong=document.createElement("strong"); strong.textContent="档位 "+(i+1)+" · "+slotName(i);
+      const sm=document.createElement("small"); sm.textContent="金币 "+g+" · "+(RANKS[r]||("爵位 "+r));
+      b.append(strong,sm);
+      b.onclick=()=>{ slot=i; render(); };
+      t.appendChild(b);
+    }
+  }
+
+  function renderMain(){
+    const box=$("mainRows"); box.innerHTML="";
+    FIELDS.forEach(f=>{
+      const row=document.createElement("div"); row.className="row";
+      const lab=document.createElement("label"); lab.htmlFor="f_"+f.key;
+      const sp=document.createElement("span"); sp.textContent=f.label;
+      const cd=document.createElement("code"); cd.textContent="地址 "+f.addr.toString(16).toUpperCase().padStart(4,"0")+" · "+f.len+" 字节 · 最大 "+f.max;
+      lab.append(sp,cd);
+      let inp;
+      const cur=rd(buf,slot,f.addr,f.len), was=rd(orig,slot,f.addr,f.len);
+      if(f.select){
+        inp=document.createElement("select");
+        RANKS.forEach((n,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=i+" · "+n; inp.appendChild(o); });
+        inp.value=String(Math.min(cur,9));
+      } else {
+        inp=document.createElement("input"); inp.type="number"; inp.min=0; inp.max=f.max; inp.value=cur; inp.inputMode="numeric";
+      }
+      inp.id="f_"+f.key; inp.disabled=!loaded;
+      if(cur!==was) inp.classList.add("changed");
+      inp.onchange=()=>{
+        let v=Math.max(0,Math.min(f.max,parseInt(inp.value,10)||0));
+        wr(slot,f.addr,f.len,v); render();
+      };
+      row.append(lab,inp); box.appendChild(row);
+    });
+    $("exampleTag").hidden = loaded;
+    ["presetMax","presetRank","presetReset"].forEach(id=>$(id).disabled=!loaded);
+  }
+
+  function renderShips(){
+    const tb=$("ships"); tb.innerHTML="";
+    for(let k=0;k<SHIPS;k++){
+      const base=SHIP0+k*SHIP_STRIDE;
+      let nm=""; for(let j=0;j<12;j++){ const c=buf[off(slot,base)+j]; if(!c) break; nm+= (c>=32&&c<127)?String.fromCharCode(c):"·"; }
+      const empty = nm==="null" || nm==="";
+      const tr=document.createElement("tr");
+      const c0=document.createElement("td"); c0.textContent=k+1;
+      const c1=document.createElement("td"); c1.textContent=nm||"null"; if(empty) c1.className="empty";
+      tr.append(c0,c1);
+      [[15,"船员数"],[17,"WEP"]].forEach(([o,l])=>{
+        const td=document.createElement("td");
+        const inp=document.createElement("input"); inp.type="number"; inp.min=0; inp.max=255;
+        inp.id="ship"+k+"_"+o; inp.setAttribute("aria-label","第"+(k+1)+"艘船 "+l);
+        inp.value=rd(buf,slot,base+o,1); inp.disabled=!loaded||empty;
+        if(rd(buf,slot,base+o,1)!==rd(orig,slot,base+o,1)) inp.classList.add("changed");
+        inp.onchange=()=>{ wr(slot,base+o,1,Math.max(0,Math.min(255,parseInt(inp.value,10)||0))); render(); };
+        td.appendChild(inp); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    }
+  }
+
+  function parseAddr(){
+    const a=parseInt($("rawAddr").value,16);
+    const len=+$("rawLen").value;
+    if(isNaN(a)||a<DS0||a+len>0x1E00) return null;
+    return {a,len};
+  }
+  function renderRaw(){
+    const p=parseAddr();
+    $("rawCur").value = p ? rd(buf,slot,p.a,p.len) : "地址超出范围";
+    $("rawApply").disabled=!loaded;
+  }
+
+  function render(){
+    renderTabs(); renderMain(); renderShips(); renderRaw();
+    let changed=false; for(let i=0;i<SIZE;i++) if(buf[i]!==orig[i]){changed=true;break;}
+    $("saveBtn").disabled=!loaded||!changed;
+  }
+
+  $("presetMax").onclick=()=>{ wr(slot,0x0CAD,2,65535); wr(slot,0x17D0,2,10000); wr(slot,0x17D2,2,30000); wr(slot,0x17D4,1,9); render(); };
+  $("presetRank").onclick=()=>{ wr(slot,0x17D4,1,9); render(); };
+  $("presetReset").onclick=()=>{ const s=off(slot,DS0); buf.set(orig.subarray(s,s+SLOT_LEN),s); render(); };
+
+  $("rawAddr").oninput=renderRaw; $("rawLen").onchange=renderRaw;
+  $("rawApply").onclick=()=>{
+    const p=parseAddr(); const msg=$("rawMsg");
+    if(!p){ msg.textContent="地址要在 0050 到 1DFF 之间。"; return; }
+    const max=p.len===1?255:65535; const v=parseInt($("rawNew").value,10);
+    if(isNaN(v)||v<0||v>max){ msg.textContent="新值要在 0 到 "+max+" 之间。"; return; }
+    wr(slot,p.a,p.len,v); msg.textContent="已写入档位 "+(slot+1)+" 的 "+p.a.toString(16).toUpperCase()+"："+v+"。"; render();
+  };
+
+  function loadFile(f){
+    const st=$("status");
+    if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const b=new Uint8Array(r.result);
+      if(b.length!==SIZE){ st.className="status bad"; st.textContent="这个文件大小是 "+b.length+" 字节，不是大航海时代的 SAVE.DAT（应为 "+SIZE+" 字节）。"; return; }
+      buf=b; orig=b.slice(); loaded=true; slot=0;
+      st.className="status ok"; st.textContent="已载入 "+f.name+"。";
+      $("saveMsg").textContent=""; render();
+    };
+    r.onerror=()=>{ st.className="status bad"; st.textContent="读取文件失败，请重新选择。"; };
+    r.readAsArrayBuffer(f);
+  }
+  $("file").onchange=e=>loadFile(e.target.files[0]);
+  const drop=$("drop");
+  drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over");});
+  drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+  drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");loadFile(e.dataTransfer.files[0]);});
+
+  // Minimal stored ZIP (no compression)
+  const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+  function crc32(d){let c=0xFFFFFFFF;for(let i=0;i<d.length;i++)c=CRC[(c^d[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+  function makeZip(name,data){
+    const nb=new TextEncoder().encode(name), crc=crc32(data), n=data.length;
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,10,true); lh.setUint32(14,crc,true); lh.setUint32(18,n,true); lh.setUint32(22,n,true); lh.setUint16(26,nb.length,true);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,10,true); ch.setUint32(16,crc,true); ch.setUint32(20,n,true); ch.setUint32(24,n,true); ch.setUint16(28,nb.length,true);
+    const cdOff=30+nb.length+n;
+    const end=new DataView(new ArrayBuffer(22));
+    end.setUint32(0,0x06054b50,true); end.setUint16(8,1,true); end.setUint16(10,1,true); end.setUint32(12,46+nb.length,true); end.setUint32(16,cdOff,true);
+    return new Blob([lh,nb,data,ch,nb,end],{type:"application/zip"});
+  }
+
+  $("saveBtn").onclick=async()=>{
+    const msg=$("saveMsg");
+    let dl=null;
+    try{ dl = window.claude ? await window.claude.use("downloads") : null; }catch(e){ dl=null; }
+    if(!dl){
+      // Plain browser: ordinary download of SAVE.DAT.
+      const url=URL.createObjectURL(new Blob([buf.slice()],{type:"application/octet-stream"}));
+      const a=document.createElement("a"); a.href=url; a.download="SAVE.DAT"; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      msg.textContent="已下载 SAVE.DAT。把它覆盖到游戏文件目录（先备份原来的），再进游戏读档。";
+      return;
+    }
+    try{
+      await dl.save({filename:"SAVE_修改版.zip", data:makeZip("SAVE.DAT", buf.slice())});
+      msg.textContent="已保存 SAVE_修改版.zip。解压后把 SAVE.DAT 覆盖到游戏文件目录，再进游戏读档。";
+    }catch(e){
+      const c=e&&e.code;
+      msg.textContent = c==="declined" ? "你取消了保存。" : c==="rate_limited" ? "已经有一个保存提示在等待，处理完再试。" : "保存失败（"+(c||"未知原因")+"）。";
+    }
+  };
+
+  buf=exampleBuffer(); orig=buf.slice(); render();
+})();
+</script>

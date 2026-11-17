@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大航海时代 实时修改器</title>
+<style>
+/* Layout: one ledger column — connection bar, captain ledger with lock toggles, fleet table, raw address drawer. */
+:root{
+  --sea:#e6ecef; --paper:#f7f9fa; --ink:#14283a; --muted:#5b6b78; --rule:#c9d3da;
+  --brass:#a8741c; --brass-ink:#fff8ec; --tide:#1f5f7a; --warn:#b4402a; --ok:#2f7a4b;
+  --display:"Songti SC","Noto Serif SC",serif; --body:"PingFang SC","Noto Sans SC",system-ui,sans-serif;
+  --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --sea:#0d1820; --paper:#13222d; --ink:#e3ebf0; --muted:#93a5b2; --rule:#2a3d4b;
+  --brass:#d9a54a; --brass-ink:#1a1307; --tide:#6fb3cf; --warn:#ef7a62; --ok:#6cc48d; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--sea);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6}
+.wrap{max-width:860px;margin:0 auto;padding:28px 16px 64px;display:grid;gap:20px}
+h1{font-family:var(--display);font-weight:900;font-size:clamp(26px,5vw,36px);margin:0}
+.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--tide);font-weight:700}
+.lede{color:var(--muted);margin:4px 0 0;max-width:62ch}
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:18px}
+.conn{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--warn);margin-right:8px}
+.dot.on{background:var(--ok)}
+.conn p{margin:0;min-width:0}
+.err{color:var(--warn)}
+button{font:inherit;font-weight:500;border-radius:8px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);padding:7px 13px;cursor:pointer}
+button:hover{border-color:var(--tide)}
+button.primary{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--tide);outline-offset:2px}
+h2{font-family:var(--display);font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--rule)}
+.row:first-child{border-top:0}
+.row label{display:grid;min-width:0}
+.row code,.hint{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.live{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted);min-width:70px;text-align:right}
+input,select{font:inherit;font-family:var(--mono);font-variant-numeric:tabular-nums;width:100%;padding:6px 9px;border-radius:7px;border:1px solid var(--rule);background:var(--sea);color:var(--ink)}
+.lock{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap}
+.lock input{width:auto}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tablebox{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 6px;border-top:1px solid var(--rule);text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:500;border-top:0}
+td input[type=number]{width:80px}
+.raw{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end}
+.raw label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.toast{font-size:13px;color:var(--muted);min-height:1.4em;margin:0}
+.port-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.port-picker label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.port-status{margin-top:8px}
+@media (max-width:560px){.row{grid-template-columns:1fr 1fr}.row label{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">KOEI · 大航海时代 1 · 实时内存修改</div>
+    <h1>大航海时代 实时修改器</h1>
+    <p class="lede">游戏开着的时候直接改数值，改完立即生效，不用存档读档。勾选“锁定”后，数值会一直保持不变。</p>
+  </header>
+
+  <section class="panel conn">
+    <p><span class="dot" id="dot"></span><span id="connText">正在连接 DOSBox-X…</span></p>
+    <button id="reconnect" type="button">重新连接</button>
+  </section>
+
+  <section class="panel">
+    <h2>作弊开关</h2>
+    <p class="sub">打开后立即生效，关掉恢复原样。重开游戏后开关会自动复位，需要再打开一次。粮食和水不会再减少，出海前先补给一次就够了。</p>
+    <div id="cheats"></div>
+    <div class="presets"><button id="cheatsAll" type="button" class="primary">全部打开</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>提督</h2>
+    <p class="sub">右边灰色数字是游戏里的当前值，每秒刷新。输入新值后按回车或点“改”。</p>
+    <div id="fields"></div>
+    <div class="presets">
+      <button id="presetMax" type="button" class="primary">一键拉满并锁定金币</button>
+      <button id="presetDuke" type="button">直接升为公爵</button>
+      <button id="unlockAll" type="button">解除全部锁定</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>港口瞬移</h2>
+    <p class="sub">在海上选择港口，点击瞬移会自动停船。到港外后打开航海菜单（鼠标模式点右键，键盘模式按回车），再选“登陆 → 进港”。</p>
+    <p class="sub" id="fleetPosition">舰队坐标等待连接</p>
+    <div class="port-picker">
+      <label>搜索港口<input id="portSearch" type="search" placeholder="输入港口名，例如 突尼斯" autocomplete="off" disabled></label>
+      <label>目标港口<select id="port" disabled><option value="">载入港口列表…</option></select></label>
+      <button id="teleport" type="button" class="primary" disabled>瞬移</button>
+    </div>
+    <p class="toast port-status" id="portStatus" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <h2>瞬移到舰队旁</h2>
+    <p class="sub">只列出正在海上航行的电脑舰队（停在港里的没法打）。舰队离你近时会瞬移到它所在的那一小格，远时放进它所在大地图格的中间，出现后用“调查 → 侦察”确认是谁，再选“战斗”。靠岸的格子中间偶尔是陆地，卡住了就瞬移回港口。</p>
+    <div class="port-picker">
+      <label>目标舰队<select id="fleetPick" disabled><option value="">等待连接…</option></select></label>
+      <button id="fleetGo" type="button" class="primary" disabled>瞬移过去</button>
+    </div>
+    <p class="toast" id="fleetStatus" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <h2>舰队</h2>
+    <p class="sub">船名为 null 的是空位。船员数不要超过船的容量。</p>
+    <div class="tablebox"><table>
+      <thead><tr><th>#</th><th>船名</th><th>船员数</th><th>WEP 值</th></tr></thead>
+      <tbody id="ships"></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel">
+    <h2>按地址改任意数值</h2>
+    <p class="sub">地址是游戏数据段偏移（十六进制，0000–FFFF）。已知：金币 0CAD，皇宫存款 17D0，名望 17D2（都是 2 字节），爵位 17D4（1 字节）。</p>
+    <div class="raw">
+      <label>地址<input id="rawAddr" value="0CAD" maxlength="4"></label>
+      <label>长度<select id="rawLen"><option value="1">1 字节</option><option value="2" selected>2 字节</option></select></label>
+      <label>当前值<input id="rawCur" readonly></label>
+      <label>新值<input id="rawNew" inputmode="numeric"></label>
+      <button id="rawSet" type="button">写入</button>
+      <button id="rawLock" type="button">锁定</button>
+    </div>
+  </section>
+  <p class="toast" id="toast"></p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  if (location.protocol === "file:"){
+    const link = document.createElement("a");
+    link.href = "http://127.0.0.1:8765/";
+    link.textContent = "打开实时修改器";
+    $("connText").replaceChildren("请先双击「启动实时修改器.app」，然后", link, "。");
+    $("fleetPosition").textContent = "请在修改器网页中连接游戏";
+    $("port").options[0].textContent = "请从修改器网页载入";
+    return;
+  }
+  let st = null;
+  let fleet = null;
+  let ports = [];
+  let teleporting = false;
+  const toast = t => { $("toast").textContent = t; };
+
+  async function api(path, body){
+    const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+    return r.json();
+  }
+  const isLocked = (off,size) => st && st.locks.some(l => l.off===off && l.size===size);
+
+  function renderTeleport(){
+    const name = fleet && ports[fleet.port]?.name;
+    const blocker = fleet?.teleportBlocker || "";
+    $("fleetPosition").textContent = fleet
+      ? `舰队坐标（${fleet.x}, ${fleet.y}）${name ? " · " + name : ""}${blocker ? " · " + blocker : ""}`
+      : "舰队坐标等待连接";
+    $("teleport").disabled = teleporting || !fleet || !!blocker || $("port").value === "";
+  }
+
+  async function loadPorts(){
+    try {
+      const r = await api("/api/ports");
+      if (!r.ok) throw new Error(r.error);
+      ports = r.ports;
+      fillPorts("");
+      $("port").disabled = false;
+      $("portSearch").disabled = false;
+      renderTeleport();
+    } catch {
+      $("port").replaceChildren(new Option("港口列表载入失败", ""));
+      $("portStatus").textContent = "请重启实时修改器后刷新页面。";
+    }
+  }
+
+  // Search matches simplified or traditional spellings (e.g. 热内亚 / 熱內亞), ignoring spaces.
+  const T2S = {"熱":"热","內":"内","亞":"亚","爾":"尔","羅":"罗","維":"维","聖":"圣","約":"约","華":"华","蘭":"兰","臘":"腊","門":"门","長":"长","澳":"澳","關":"关","島":"岛","歐":"欧","開":"开","達":"达","賽":"赛","倫":"伦","陸":"陆","斯":"斯","塞":"塞","魯":"鲁","強":"强","畢":"毕","蘇":"苏","錫":"锡","峴":"岘","韋":"韦","拉":"拉","納":"纳","買":"买","圖":"图","衛":"卫","漢":"汉","堡":"堡","馬":"马","亞":"亚","剌":"剌","帝":"帝","汶":"汶","爪":"爪","哇":"哇","兹":"兹","茲":"兹","玆":"兹","特":"特","勞":"劳","坦":"坦"};
+  const norm = s => Array.from(String(s).replace(/\s+/g, "")).map(c => T2S[c] || c).join("");
+  function fillPorts(query){
+    const select = $("port");
+    const keep = select.value;
+    const q = norm(query);
+    const hits = ports.filter(p => !q || norm(p.name).includes(q));
+    select.replaceChildren(new Option(q ? (hits.length ? `找到 ${hits.length} 个港口` : "没有找到这个港口") : "选择港口", ""));
+    for (const {id, name, x, y} of hits){
+      select.add(new Option(`${name}（${x}, ${y}）`, id));
+    }
+    if (hits.some(p => String(p.id) === keep)) select.value = keep;
+    else if (q && hits.length === 1) select.value = String(hits[0].id);
+    renderTeleport();
+  }
+  $("portSearch").oninput = () => { $("portStatus").textContent = ""; fillPorts($("portSearch").value); };
+  $("portSearch").onkeydown = e => {
+    if (e.key !== "Enter") return;
+    const select = $("port");
+    if (select.value === "" && select.options.length > 1) select.selectedIndex = 1;
+    renderTeleport();
+    if (!$("teleport").disabled) $("teleport").click();
+  };
+
+  $("port").onchange = () => {
+    $("portStatus").textContent = "";
+    renderTeleport();
+  };
+  $("teleport").onclick = async () => {
+    const port = Number($("port").value);
+    teleporting = true;
+    renderTeleport();
+    try {
+      const r = await api("/api/teleport", {port});
+      if (!r.ok){
+        $("portStatus").textContent = r.error;
+        return;
+      }
+      apply(r);
+      const {name, x, y} = r.destination;
+      $("portStatus").textContent = `已移到${name}港外（${x}, ${y}）。鼠标模式下，在海图上点右键，再左键选“登陆 → 进港”。`;
+    } catch {
+      $("portStatus").textContent = "请求失败，请查看舰队坐标后再试。";
+    } finally {
+      teleporting = false;
+      renderTeleport();
+    }
+  };
+
+  function buildFields(){
+    const box = $("fields"); box.innerHTML = "";
+    for (const [k, m] of Object.entries(st.meta)){
+      const row = document.createElement("div"); row.className = "row";
+      const lab = document.createElement("label"); lab.htmlFor = "f_"+k;
+      const s = document.createElement("span"); s.textContent = m.label;
+      const c = document.createElement("code"); c.textContent = "地址 "+m.off.toString(16).toUpperCase().padStart(4,"0")+" · 最大 "+m.max;
+      lab.append(s,c);
+      let inp;
+      if (k === "rank"){
+        inp = document.createElement("select");
+        st.ranks.forEach((n,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=i+" · "+n; inp.appendChild(o); });
+      } else { inp = document.createElement("input"); inp.type="number"; inp.min=0; inp.max=m.max; }
+      inp.id = "f_"+k;
+      const live = document.createElement("span"); live.className="live"; live.id="live_"+k;
+      const btn = document.createElement("button"); btn.type="button"; btn.textContent="改";
+      const set = async () => {
+        const v = Math.max(0, Math.min(m.max, parseInt(inp.value,10)||0));
+        const r = await api("/api/set", {off:m.off, size:m.size, value:v});
+        apply(r); if (r.ok) toast(m.label+" 已改为 "+v+"。");
+      };
+      btn.onclick = set;
+      inp.addEventListener("keydown", e => { if (e.key==="Enter") set(); });
+      if (k === "rank") inp.onchange = set;
+      const lk = document.createElement("label"); lk.className="lock";
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.id="lock_"+k;
+      cb.onchange = async () => {
+        const v = cb.checked ? Math.max(0, Math.min(m.max, parseInt(inp.value,10)||0)) : 0;
+        const r = await api("/api/lock", {off:m.off, size:m.size, on:cb.checked, value:v});
+        apply(r); if (r.ok) toast(cb.checked ? m.label+" 已锁定为 "+v+"。" : m.label+" 已解除锁定。");
+      };
+      lk.append(cb, document.createTextNode("锁定"));
+      const right = document.createElement("div"); right.style.display="flex"; right.style.gap="8px"; right.style.alignItems="center";
+      right.append(live, btn);
+      row.append(lab, inp, right, lk);
+      box.appendChild(row);
+      inp.value = st.fields[k];
+    }
+  }
+
+  function renderShips(){
+    const tb = $("ships"); tb.innerHTML = "";
+    st.ships.forEach(s => {
+      const empty = s.name==="null" || s.name==="";
+      const tr = document.createElement("tr");
+      const a = document.createElement("td"); a.textContent = s.i+1;
+      const b = document.createElement("td"); b.textContent = s.name || "null";
+      tr.append(a,b);
+      [["crew","crewOff","船员数"],["wep","wepOff","WEP"]].forEach(([k,ok,l])=>{
+        const td = document.createElement("td");
+        const inp = document.createElement("input"); inp.type="number"; inp.min=0; inp.max=255; inp.value=s[k];
+        inp.id = "ship"+s.i+k; inp.disabled = empty; inp.setAttribute("aria-label","第"+(s.i+1)+"艘船 "+l);
+        inp.onchange = async () => { const r = await api("/api/set",{off:s[ok],size:1,value:Math.max(0,Math.min(255,parseInt(inp.value,10)||0))}); apply(r); if(r.ok) toast("第"+(s.i+1)+"艘船 "+l+" 已改为 "+inp.value+"。"); };
+        td.appendChild(inp); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+
+  function renderCheats(list){
+    const box = $("cheats");
+    if (!list){ box.textContent = "等待连接游戏…"; return; }
+    if (box.dataset.built !== "1"){
+      box.innerHTML = "";
+      for (const c of list){
+        const row = document.createElement("div"); row.className = "row";
+        const lab = document.createElement("label"); lab.htmlFor = "cheat_"+c.name;
+        const s = document.createElement("span"); s.textContent = c.label;
+        const st2 = document.createElement("code"); st2.id = "cheatState_"+c.name;
+        lab.append(s, st2);
+        const lk = document.createElement("label"); lk.className = "lock";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.id = "cheat_"+c.name;
+        cb.onchange = async () => {
+          const r = await api("/api/cheat", {name:c.name, on:cb.checked});
+          if (!r.ok){ toast(r.error); cb.checked = !cb.checked; return; }
+          apply(r); toast(c.label + (cb.checked ? " 已打开。" : " 已关闭。"));
+        };
+        lk.append(cb, document.createTextNode("打开"));
+        row.append(lab, document.createElement("span"), document.createElement("span"), lk);
+        box.appendChild(row);
+      }
+      box.dataset.built = "1";
+    }
+    for (const c of list){
+      const cb = $("cheat_"+c.name), s = $("cheatState_"+c.name);
+      if (!cb) continue;
+      cb.checked = c.state === "on"; cb.disabled = c.state === "unknown";
+      s.textContent = c.state === "on" ? "已生效" : c.state === "off" ? "未打开" : "游戏代码对不上，不可用";
+    }
+  }
+  $("cheatsAll").onclick = async () => {
+    let r = null;
+    for (const c of (st && st.cheats) || []){
+      if (c.state !== "off") continue;
+      r = await api("/api/cheat", {name:c.name, on:true});
+      if (!r.ok){ toast(r.error); return; }
+    }
+    if (r) apply(r);
+    toast("作弊开关已全部打开。");
+  };
+
+  function renderFleets(list){
+    const sel = $("fleetPick");
+    if (document.activeElement === sel) return;
+    const keep = sel.value;
+    const sea = (list || []).filter(f => f.atSea);
+    sel.replaceChildren(new Option(list ? (sea.length ? "选择舰队" : "海上暂时没有电脑舰队") : "等待连接…", ""));
+    const order = {"奥斯曼":0, "海盗":1, "西班牙":2, "葡萄牙":3};
+    sea.sort((a,b) => (order[a.nation] ?? 9) - (order[b.nation] ?? 9) || a.i - b.i);
+    for (const f of sea) sel.add(new Option(`${f.nation}舰队 ${f.i} 号 · 靠近${f.near}（${f.x}, ${f.y}）`, f.i));
+    if (sea.some(f => String(f.i) === keep)) sel.value = keep;
+    sel.disabled = !list;
+    $("fleetGo").disabled = !list || sel.value === "" || !!(fleet && fleet.teleportBlocker);
+  }
+  $("fleetPick").onchange = () => { $("fleetStatus").textContent = ""; renderFleets(st && st.fleets); };
+  $("fleetGo").onclick = async () => {
+    const id = Number($("fleetPick").value);
+    $("fleetGo").disabled = true;
+    try {
+      const r = await api("/api/teleport_fleet", {fleet:id});
+      if (!r.ok){ $("fleetStatus").textContent = r.error; return; }
+      apply(r);
+      $("fleetStatus").textContent = r.direction
+        ? `已停在 ${id} 号舰队的${r.direction === "东" ? "西" : "东"}边，紧挨着它。马上选“战斗”，方向选「${r.direction}」。`
+        : `已到 ${id} 号舰队所在的大地图格。它离你还远，船是停着的：先“操作 → 起锚”往它那边开，或者等它靠近后再瞬移一次。`;
+    } catch { $("fleetStatus").textContent = "请求失败，请稍后再试。"; }
+    finally { renderFleets(st && st.fleets); }
+  };
+
+  function apply(r){
+    fleet = r.ok ? r.fleet : null;
+    renderTeleport();
+    renderFleets(r.ok ? r.fleets : null);
+    renderCheats(r.ok ? r.cheats : null);
+    if (!r.ok){
+      $("dot").className="dot"; $("connText").innerHTML=""; const e=document.createElement("span"); e.className="err"; e.textContent=r.error; $("connText").appendChild(e);
+      return;
+    }
+    const first = !st; st = r;
+    $("dot").className="dot on";
+    $("connText").textContent = "已连接 DOSBox-X（进程 "+r.pid+"，游戏数据段在 "+r.ds+"）";
+    if (first || !$("fields").children.length) buildFields();
+    for (const k of Object.keys(st.meta)){
+      const live = $("live_"+k); if (live) live.textContent = k==="rank" ? (st.ranks[st.fields[k]]||st.fields[k]) : st.fields[k];
+      const cb = $("lock_"+k); if (cb) cb.checked = isLocked(st.meta[k].off, st.meta[k].size);
+    }
+    const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#ships");
+    if (!focused) renderShips();
+    refreshRaw();
+  }
+
+  async function refreshRaw(){
+    const a = parseInt($("rawAddr").value,16), len = +$("rawLen").value;
+    if (isNaN(a)||a<0||a+len>0x10000){ $("rawCur").value="地址无效"; return; }
+    if (!st) return;
+    const r = await api("/api/read",{off:a,size:len});
+    $("rawCur").value = r.ok ? r.value : "";
+    $("rawLock").textContent = isLocked(a,len) ? "解除锁定" : "锁定";
+  }
+
+  $("rawAddr").oninput = refreshRaw; $("rawLen").onchange = refreshRaw;
+  $("rawSet").onclick = async () => {
+    const a=parseInt($("rawAddr").value,16), len=+$("rawLen").value, v=parseInt($("rawNew").value,10), max=len===1?255:65535;
+    if (isNaN(a)||isNaN(v)||v<0||v>max){ toast("地址要是 0000–FFFF，新值要在 0–"+max+" 之间。"); return; }
+    const r = await api("/api/set",{off:a,size:len,value:v}); apply(r); if(r.ok) toast("地址 "+a.toString(16).toUpperCase()+" 已写入 "+v+"。");
+  };
+  $("rawLock").onclick = async () => {
+    const a=parseInt($("rawAddr").value,16), len=+$("rawLen").value; if (isNaN(a)) return;
+    const on = !isLocked(a,len); const v=parseInt($("rawNew").value,10);
+    const r = await api("/api/lock",{off:a,size:len,on,value:isNaN(v)?undefined:v}); apply(r);
+    if (r.ok) toast(on ? "地址 "+a.toString(16).toUpperCase()+" 已锁定。" : "已解除锁定。");
+  };
+
+  $("presetMax").onclick = async () => {
+    let r = await api("/api/set",{off:0x17D0,size:2,value:10000});
+    r = await api("/api/set",{off:0x17D2,size:2,value:30000});
+    r = await api("/api/lock",{off:0x0CAD,size:2,on:true,value:65535});
+    const g = r.ok ? await api("/api/set",{off:0x0CAD,size:2,value:65535}) : r;
+    apply(g); if (g.ok){ buildFields(); apply(g); toast("金币 65535（已锁定）、皇宫存款 10000 千、名望 30000。"); }
+  };
+  $("presetDuke").onclick = async () => { const r = await api("/api/set",{off:0x17D4,size:1,value:9}); apply(r); if(r.ok){ $("f_rank").value=9; toast("已升为公爵。去王宫见国王接最终任务。"); } };
+  $("unlockAll").onclick = async () => {
+    let r = {ok:true}; for (const l of (st?st.locks:[])) r = await api("/api/lock",{off:l.off,size:l.size,on:false});
+    r = await api("/api/state"); apply(r); toast("已解除全部锁定。");
+  };
+  $("reconnect").onclick = async () => { const r = await api("/api/reconnect",{}); st=null; $("fields").innerHTML=""; apply(r); if (!ports.length) loadPorts(); };
+
+  async function poll(){ try { apply(await api("/api/state")); } catch(e){ fleet=null; renderTeleport(); $("dot").className="dot"; $("connText").textContent="修改器后台没有运行。请重新双击“启动实时修改器”。"; } }
+  loadPorts();
+  poll(); setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

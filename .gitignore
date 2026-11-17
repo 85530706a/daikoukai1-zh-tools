@@ -1,0 +1,25 @@
+# 不要提交任何游戏文件（版权归光荣特库摩）
+*.EXE
+*.exe
+*.COM
+*.com
+*.DAT
+*.dat
+*.16P
+*.16p
+*.PUT
+*.put
+*.CIM
+*.cim
+*.BIN
+*.bin
+EGRP
+OGRP
+_backup_original/
+游戏文件/
+
+# 生成物和系统文件
+__pycache__/
+*.pyc
+.DS_Store
+*.app/
